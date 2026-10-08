@@ -33,7 +33,7 @@ struct JunkView: View {
                 .disabled(junk.phase == .scanning || junk.isCleaning)
             }
         }
-        .confirmationDialog(
+        .alert(
             "\(model.removalMode.actionVerb): \(junk.selectedItems.count) elementi, \(ByteFormat.string(junk.selectedSize))?",
             isPresented: $confirming
         ) {
@@ -43,6 +43,7 @@ struct JunkView: View {
                     model.refreshDisk()
                 }
             }
+            Button("Annulla", role: .cancel) {}
         } message: {
             Text(confirmationMessage)
         }

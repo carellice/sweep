@@ -129,7 +129,6 @@ struct FullDiskAccessHint: View {
                 Text("È un permesso diverso da quelli chiesti con le finestre “Sweep vuole accedere alla cartella…”: macOS non lo propone mai da solo. In Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al disco attiva Sweep (se non è in elenco aggiungilo con + o trascinandolo dal Finder), poi riavvia l'app.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("1. Apri Impostazioni", action: openFullDiskAccessSettings)
                     Button("Mostra Sweep nel Finder") { revealInFinder([Bundle.main.bundleURL]) }

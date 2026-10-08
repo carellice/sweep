@@ -87,7 +87,7 @@ final class JunkModel {
         let items = selectedItems
         guard !items.isEmpty, !isCleaning else { return }
         isCleaning = true
-        let result = await Task.detached { Remover.remove(items, mode: mode) }.value
+        let result = await Task.detached { Remover.remove(items, mode: mode, askAdmin: true) }.value
         let removed = Set(result.removed)
         for index in results.indices {
             results[index].items.removeAll { removed.contains($0.url) }
@@ -118,6 +118,8 @@ final class JunkModel {
 @MainActor @Observable
 final class AppsModel {
     private(set) var apps: [InstalledApp] = []
+    /// Size of each app bundle, filled in as the bundles are measured.
+    private(set) var sizes: [URL: Int64] = [:]
     private(set) var selected: InstalledApp?
     private(set) var footprint: [ScanItem] = []
     private(set) var isLoading = false
@@ -131,6 +133,20 @@ final class AppsModel {
     func load() async {
         let own = Bundle.main.bundleIdentifier
         apps = await Task.detached { AppScanner.installedApps() }.value.filter { $0.bundleID != own }
+        sizes = [:]
+        // Not tied to the view's task: leaving the pane must not cut the measuring short.
+        Task { await measure(apps) }
+    }
+
+    private func measure(_ apps: [InstalledApp]) async {
+        await withTaskGroup(of: (URL, Int64).self) { group in
+            for app in apps {
+                group.addTask { (app.url, FileSizer.size(of: app.url)) }
+            }
+            for await (url, size) in group {
+                sizes[url] = size
+            }
+        }
     }
 
     func select(_ app: InstalledApp?) async {
@@ -159,7 +175,7 @@ final class AppsModel {
         let items = selectedItems
         guard !items.isEmpty else { return }
         isLoading = true
-        let result = await Task.detached { Remover.remove(items, mode: mode) }.value
+        let result = await Task.detached { Remover.remove(items, mode: mode, askAdmin: true) }.value
         lastResult = result
         isLoading = false
         if let selected, result.removed.contains(selected.url) {
@@ -184,6 +200,8 @@ final class LargeFilesModel {
 
     var root = FileManager.default.homeDirectoryForCurrentUser
     var threshold = thresholds[1]
+    /// Also list whole folders over the threshold, not just single files.
+    var includeFolders = false
     private(set) var items: [ScanItem] = []
     private(set) var isScanning = false
     private(set) var hasScanned = false
@@ -191,16 +209,32 @@ final class LargeFilesModel {
     var lastResult: RemovalResult?
     private var task: Task<[ScanItem], Never>?
 
-    var selectedItems: [ScanItem] { items.filter { selection.contains($0.url) } }
+    /// Selected items, without the ones inside a folder that is selected too:
+    /// they go away with it and must not be counted twice.
+    var selectedItems: [ScanItem] {
+        let paths = Set(selection.map(\.path))
+        return items.filter { paths.contains($0.url.path) && !Self.isInside($0.url, anyOf: paths) }
+    }
     var selectedSize: Int64 { selectedItems.reduce(0) { $0 + $1.size } }
+
+    private static func isInside(_ url: URL, anyOf folders: Set<String>) -> Bool {
+        var parent = url.deletingLastPathComponent()
+        while parent.path != "/" {
+            if folders.contains(parent.path) { return true }
+            parent = parent.deletingLastPathComponent()
+        }
+        return false
+    }
 
     func scan() async {
         task?.cancel()
         isScanning = true
         selection = []
         lastResult = nil
-        let (root, threshold) = (root, threshold)
-        let task = Task.detached { LargeFileScanner.scan(root: root, minSize: threshold) }
+        let (root, threshold, includeFolders) = (root, threshold, includeFolders)
+        let task = Task.detached {
+            LargeFileScanner.scan(root: root, minSize: threshold, includeFolders: includeFolders)
+        }
         self.task = task
         let found = await task.value
         guard !task.isCancelled else { return }
@@ -222,10 +256,11 @@ final class LargeFilesModel {
     func removeSelected(mode: RemovalMode) async {
         let selected = selectedItems
         guard !selected.isEmpty else { return }
-        let result = await Task.detached { Remover.remove(selected, mode: mode) }.value
-        let removed = Set(result.removed)
-        items.removeAll { removed.contains($0.url) }
-        selection.subtract(removed)
+        let result = await Task.detached { Remover.remove(selected, mode: mode, askAdmin: true) }.value
+        let removed = Set(result.removed.map(\.path))
+        // What was inside a removed folder is gone with it.
+        items.removeAll { removed.contains($0.url.path) || Self.isInside($0.url, anyOf: removed) }
+        selection.formIntersection(items.map(\.url))
         lastResult = result
     }
 }

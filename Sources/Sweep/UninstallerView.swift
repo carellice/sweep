@@ -6,11 +6,15 @@ struct UninstallerView: View {
     @State private var search = ""
     @State private var picked: InstalledApp.ID?
     @State private var confirming = false
+    @AppStorage("uninstallerSortBySize") private var sortBySize = false
 
     private var apps: AppsModel { model.apps }
 
     private var filtered: [InstalledApp] {
-        search.isEmpty ? apps.apps : apps.apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        let found = search.isEmpty ? apps.apps : apps.apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        guard sortBySize else { return found }
+        // Stable: apps not measured yet stay at the bottom, in alphabetical order.
+        return found.sorted { apps.sizes[$0.url, default: -1] > apps.sizes[$1.url, default: -1] }
     }
 
     var body: some View {
@@ -23,8 +27,21 @@ struct UninstallerView: View {
                         Text(app.name)
                         Text(app.version ?? app.bundleID).font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Text(apps.sizes[app.url].map(ByteFormat.string) ?? "…")
+                        .monospacedDigit().foregroundStyle(.secondary)
                 }
                 .tag(app.id)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Picker("Ordina per", selection: $sortBySize) {
+                    Text("Nome").tag(false)
+                    Text("Dimensione").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(8)
+                .background(.bar)
             }
             .searchable(text: $search, placement: .toolbar, prompt: "Cerca app")
             .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)

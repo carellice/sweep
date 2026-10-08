@@ -19,6 +19,8 @@ struct LargeFilesView: View {
                     ForEach(LargeFilesModel.thresholds, id: \.self) { Text(ByteFormat.string($0)).tag($0) }
                 }
                 .fixedSize()
+                Toggle("Includi cartelle", isOn: $large.includeFolders)
+                    .help("Elenca anche le cartelle intere che superano la soglia. La ricerca è più lenta.")
                 Spacer()
                 if large.isScanning {
                     ProgressView().controlSize(.small)
@@ -63,17 +65,17 @@ struct LargeFilesView: View {
             .overlay {
                 if large.items.isEmpty, !large.isScanning {
                     ContentUnavailableView(
-                        large.hasScanned ? "Nessun file trovato" : "File grandi",
+                        large.hasScanned ? "Nessun elemento trovato" : "File grandi",
                         systemImage: "doc.viewfinder",
                         description: Text(large.hasScanned
-                            ? "Nessun file supera la soglia scelta in questa cartella."
-                            : "Scegli una cartella e una soglia, poi premi Cerca. La Libreria e i file nascosti sono esclusi."))
+                            ? "Niente supera la soglia scelta in questa cartella."
+                            : "Scegli una cartella e una soglia, poi premi Cerca. Con “Includi cartelle” vedi anche le cartelle intere oltre la soglia. La Libreria e i file nascosti sono esclusi."))
                 }
             }
 
             Divider()
             HStack {
-                Text("Selezionati: \(large.selection.count) file, \(ByteFormat.string(large.selectedSize))").font(.headline)
+                Text("Selezionati: \(large.selectedItems.count) elementi, \(ByteFormat.string(large.selectedSize))").font(.headline)
                 Spacer()
                 Button("\(model.removalMode.actionVerb)…") { confirming = true }
                     .buttonStyle(.borderedProminent)
@@ -84,7 +86,7 @@ struct LargeFilesView: View {
         }
         .navigationTitle("File grandi")
         .confirmationDialog(
-            "\(model.removalMode.actionVerb): \(large.selection.count) file, \(ByteFormat.string(large.selectedSize))?",
+            "\(model.removalMode.actionVerb): \(large.selectedItems.count) elementi, \(ByteFormat.string(large.selectedSize))?",
             isPresented: $confirming
         ) {
             Button(model.removalMode.actionVerb, role: .destructive) {

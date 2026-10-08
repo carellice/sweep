@@ -19,7 +19,7 @@
 - **Disinstalla app** — rimuove un'app insieme a preferenze, cache, container,
   file di supporto, agenti di avvio e stato salvato. Se l'app è aperta ti chiede
   prima di chiuderla.
-- **File grandi** — elenca i file oltre una soglia (da 50 MB a 1 GB) in una
+- **File grandi** — elenca i file (e, se richiesto, le cartelle intere) oltre una soglia (da 50 MB a 1 GB) in una
   cartella a tua scelta.
 - **Panoramica** — spazio usato e libero sul disco.
 
@@ -99,8 +99,9 @@ Per cambiare l'icona modifica `Scripts/make-icon.swift`, elimina
 
 ## Limiti noti
 
-- I file in `/Library` che richiedono privilegi di amministratore non vengono
-  rimossi: Sweep li segnala tra gli elementi non rimossi.
+- Per gli elementi che richiedono privilegi di amministratore (app installate da
+  un pacchetto, file in `/Library`) macOS chiede la password; se la richiesta
+  viene annullata Sweep li segnala tra gli elementi non rimossi.
 - L'app è firmata ad-hoc, non notarizzata.
 - Interfaccia solo in italiano.
 

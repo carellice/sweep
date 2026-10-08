@@ -64,6 +64,38 @@ final class SweepCoreTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: documents.appendingPathComponent("thesis.txt").path))
     }
 
+    func testRemoverRetriesDeniedItemsAsAdmin() throws {
+        let locked = home.appendingPathComponent("Library/Caches/locked")
+        let odd = try makeFile("Library/Caches/locked/it's \"odd\" $HOME.app/data.bin").deletingLastPathComponent()
+        let plain = try makeFile("Library/Caches/locked/plain/data.bin").deletingLastPathComponent()
+        try makeFile(".Trash/plain/older.bin")
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        let items = [ScanItem(url: odd, size: 10), ScanItem(url: plain, size: 5)]
+
+        let refused = Remover.remove(items, mode: .trash, home: home, askAdmin: true) { _ in .cancelled }
+        XCTAssertTrue(refused.removed.isEmpty)
+        XCTAssertEqual(refused.failures.map(\.needsAdmin), [true, true])
+
+        // Stands in for the root shell: same command, with the folder unlocked.
+        let result = Remover.remove(items, mode: .trash, home: home, askAdmin: true) { command in
+            try? self.fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            let shell = Process()
+            shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+            shell.arguments = ["-c", command]
+            try? shell.run()
+            shell.waitUntilExit()
+            return .done
+        }
+        XCTAssertEqual(Set(result.removed), [odd, plain])
+        XCTAssertEqual(result.bytes, 15)
+        XCTAssertTrue(result.failures.isEmpty)
+        let trashed = try fm.contentsOfDirectory(atPath: home.appendingPathComponent(".Trash").path)
+        XCTAssertEqual(trashed.count, 3)
+        XCTAssertTrue(trashed.contains("it's \"odd\" $HOME.app"))
+        XCTAssertTrue(fm.fileExists(atPath: home.appendingPathComponent(".Trash/plain/older.bin").path))
+    }
+
     // MARK: Sizing and junk scan
 
     func testFileSizerSumsFolderTree() throws {
@@ -138,5 +170,21 @@ final class SweepCoreTests: XCTestCase {
 
         let items = LargeFileScanner.scan(root: home, minSize: 100_000)
         XCTAssertEqual(items.map(\.name), ["big.mov"])
+    }
+
+    func testLargeFileScanListsFoldersOnRequest() throws {
+        try makeFile("Movies/big.mov", bytes: 300_000)
+        try makeFile("Projects/app/a.bin", bytes: 60_000)
+        try makeFile("Projects/app/.git/pack", bytes: 60_000)
+        try makeFile("Projects/notes.txt", bytes: 1_000)
+        try makeFile("Tools/Editor.app/Contents/MacOS/Editor", bytes: 200_000)
+        try makeFile("Library/Caches/huge.bin", bytes: 300_000)
+
+        let items = LargeFileScanner.scan(root: home, minSize: 100_000, includeFolders: true)
+        // Folders count their hidden content, but hidden folders and package contents are not listed.
+        XCTAssertEqual(Set(items.map(\.name)), ["Movies", "big.mov", "Projects", "app", "Tools", "Editor.app"])
+        let app = try XCTUnwrap(items.first { $0.name == "app" })
+        XCTAssertGreaterThanOrEqual(app.size, 120_000)
+        XCTAssertGreaterThan(try XCTUnwrap(items.first { $0.name == "Projects" }).size, app.size)
     }
 }
